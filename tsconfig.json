@@ -20,6 +20,6 @@
         "@/*": ["./src/*"]
       }
     },
-    "include": ["src", "src/components/weather/hourlyComparison.tsx"],
+    "include": ["src"],
     "references": [{ "path": "./tsconfig.node.json" }]
   }

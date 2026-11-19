@@ -4,20 +4,12 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Served at gracywhelihan.com/comparedToYesterday/
   base: '/comparedToYesterday/',
   plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  },
-  server: {
-    proxy: {
-      '/api/weather': {
-        target: 'https://api.weatherapi.com/v1',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/weather/, '')
-      }
-    }
   }
 })
