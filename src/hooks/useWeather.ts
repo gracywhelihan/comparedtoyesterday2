@@ -1,81 +1,42 @@
-import { useState, useEffect } from 'react';
-import { getWeatherData } from '@/lib/weatherService';
-import type { WeatherData } from '@/types/weather';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FALLBACK, getPosition, placeName } from "../lib/location";
+import { fetchWeather, type OpenMeteoResponse } from "../lib/weather";
 
-export function useWeather(defaultCity: string = 'London') {
-  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-  const [loading, setLoading] = useState(true);
+/**
+ * Finds the visitor (falls back to New York), loads the weather, and
+ * `reload()` does it again (the Update button).
+ *
+ * Returns the raw °F response; the page converts it to the chosen unit,
+ * so switching °F/°C never needs a new request.
+ */
+export function useWeather() {
+  const [place, setPlace] = useState("Finding you…");
+  const [weather, setWeather] = useState<OpenMeteoResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [location, setLocation] = useState<string>(defaultCity);
-  const [usingGeolocation, setUsingGeolocation] = useState(false);
+  // If Update is pressed twice quickly, only the latest request may update the page
+  const latest = useRef(0);
 
-  const getLocation = (): Promise<{ lat: number; lon: number }> => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported by your browser'));
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-          });
-        },
-        (error) => {
-          reject(new Error('Unable to get location: ' + error.message));
-        },
-        { timeout: 10000 } // 10 second timeout
-      );
-    });
-  };
-
-  const fetchWeather = async (useGeolocation: boolean = false) => {
+  const reload = useCallback(async () => {
+    const id = ++latest.current;
+    const pos = await getPosition();
+    if (id !== latest.current) return;
+    const coords = pos ?? FALLBACK;
+    setPlace(pos ? "Locating…" : FALLBACK.name);
     try {
-      setLoading(true);
+      const [data, name] = await Promise.all([fetchWeather(coords), pos ? placeName(coords) : null]);
+      if (id !== latest.current) return;
+      if (pos) setPlace(name ?? `${coords.lat}, ${coords.lon}`);
       setError(null);
-
-      if (useGeolocation) {
-        const coords = await getLocation();
-        const data = await getWeatherData(`${coords.lat},${coords.lon}`);
-        setWeatherData(data);
-        setLocation(data.location.name);
-        setUsingGeolocation(true);
-      } else {
-        const data = await getWeatherData(location);
-        setWeatherData(data);
-        setUsingGeolocation(false);
-      }
+      setWeather(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
-    } finally {
-      setLoading(false);
+      if (id !== latest.current) return;
+      setError(err instanceof Error ? err.message : String(err));
     }
-  };
-
-  // Initial fetch using geolocation
-  useEffect(() => {
-    fetchWeather(true).catch(() => {
-      // Fallback to default city if geolocation fails
-      fetchWeather(false);
-    });
   }, []);
 
-  // Fetch when location changes manually
   useEffect(() => {
-    if (!usingGeolocation) {
-      fetchWeather(false);
-    }
-  }, [location, usingGeolocation]);
+    reload();
+  }, [reload]);
 
-  return {
-    weatherData,
-    loading,
-    error,
-    location,
-    setLocation,
-    refetch: () => fetchWeather(usingGeolocation),
-    useGeolocation: () => fetchWeather(true),
-  };
+  return { place, weather, error, reload };
 }
