@@ -1,0 +1,63 @@
+name: Build and deploy
+
+# This repo is public. That's fine: only pushes to main (which only the owner can do)
+# trigger this, and GitHub never exposes repo secrets to pull requests from forks.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # adds a "Run workflow" button in the Actions tab
+
+# Never run two deploys at once
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+# Needs to push the built files to the `deploy` branch, nothing else
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # GitHub's own actions (not third-party)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
+      # The server doesn't have Node, so it never builds anything: it just copies
+      # this branch. Rebuilt from scratch each time (old builds live in main's history).
+      - name: Publish dist/ to the deploy branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist
+          git init -q -b deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Build of ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" deploy
+
+      - name: Tell the server to update
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pin the server's identity so a man-in-the-middle can't pose as it
+          echo "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The server ignores what we ask to run; this key can only trigger deploy-cty
+          ssh -T -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST"

@@ -24,6 +24,24 @@ No API keys or `.env` needed — weather comes from [Open-Meteo](https://open-me
 | `?demo=-8` | pretend today is 8° colder (preview the background colors; try `0`, `5`, `10`) |
 | `?windy` | pretend every third hour has 32 mph gusts (preview the wind line) |
 
+## Deploying
+
+Merging to `main` deploys automatically (`.github/workflows/deploy.yml`):
+
+1. GitHub Actions runs `npm ci && npm run build`.
+2. It force-pushes the built files (`dist/`) to the **`deploy` branch** — that branch only
+   ever contains the latest build.
+3. It SSHes into the droplet as the no-sudo `deploy` user with this repo's own key, which is
+   locked to one command, `/usr/local/bin/deploy-cty` (source: `deploy/deploy-cty.sh`): it
+   resets `/var/www/comparedtoyesterday` to the `deploy` branch. The server never builds
+   anything, so it doesn't need Node.
+4. nginx serves that folder at `/comparedToYesterday/` (config lives in the portfolio repo,
+   `gracy-website2.0/deploy/nginx/`).
+
+Repo secrets (Settings → Secrets and variables → Actions): `DEPLOY_HOST`, `DEPLOY_USER`
+(`deploy`), `DEPLOY_KEY` (this repo's own key), `DEPLOY_KNOWN_HOSTS`. You can also redeploy
+from the **Actions** tab → *Build and deploy* → *Run workflow*.
+
 ## How it works
 
 - **One request** to Open-Meteo with `past_days=1`, so the hourly data starts at yesterday
